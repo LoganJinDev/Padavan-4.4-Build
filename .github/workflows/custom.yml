@@ -137,14 +137,14 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@main
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 1
-      - uses: hendrikmuhs/ccache-action@main
+      - uses: hendrikmuhs/ccache-action@dbeefd73e8e2ffc1bbc412570072735eb4db3607 # v1.2.25
         with:
           key: ${{ inputs.target }}-${{ inputs.toolchain }}
 
-      - uses: actions/setup-go@main
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version: '1.24.x'
           check-latest: true
@@ -322,7 +322,7 @@ jobs:
             gh api -X DELETE "/repos/${{ github.repository }}/actions/caches/$id" >/dev/null 2>&1 || true
           done
 
-      - uses: actions/upload-artifact@main
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ inputs.target }}-${{ inputs.toolchain }}-${{ env.BUILD_DATE }}
           path: trunk/output/*.trx
@@ -344,7 +344,7 @@ jobs:
           fi
           echo "（size-guard rc=$rc：0=通过、2=无法判定，均放行）"
 
-      - uses: softprops/action-gh-release@master
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         if: ${{ inputs.release }}
         with:
           tag_name: ${{ env.BUILD_DATE }}
@@ -360,7 +360,7 @@ jobs:
             - Custom: ${{ inputs.customization }}
           files: trunk/output/*.trx
 
-      - uses: Mattraks/delete-workflow-runs@main
+      - uses: Mattraks/delete-workflow-runs@b3018382ca039b53d238908238bd35d1fb14f8ee # v2.1.0
         if: ${{ inputs.oldworkflow }}
         with:
           retain_days: 0

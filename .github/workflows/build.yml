@@ -32,14 +32,14 @@ jobs:
         toolchain: ["${{ inputs.toolchain }}"]
 
     steps:
-      - uses: actions/checkout@main
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 1
-      - uses: hendrikmuhs/ccache-action@main
+      - uses: hendrikmuhs/ccache-action@dbeefd73e8e2ffc1bbc412570072735eb4db3607 # v1.2.25
         with:
           key: ${{ matrix.target }}-${{ matrix.toolchain }}
 
-      - uses: actions/setup-go@main
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version: '1.24.x'
           check-latest: true
@@ -57,12 +57,12 @@ jobs:
         run: |
           make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
 
-      - uses: actions/upload-artifact@main
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ matrix.target }}-${{ matrix.toolchain }}-${{ env.BUILD_DATE }}
           path: trunk/images/*.trx
 
-      - uses: ncipollo/release-action@main
+      - uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
         with:
           commit: ${{ github.sha }}
           tag: ${{ env.BUILD_DATE }}
@@ -70,7 +70,7 @@ jobs:
           allowUpdates: true
           omitBodyDuringUpdate: true
 
-      - uses: Mattraks/delete-workflow-runs@main
+      - uses: Mattraks/delete-workflow-runs@b3018382ca039b53d238908238bd35d1fb14f8ee # v2.1.0
         with:
           retain_days: 0
           keep_minimum_runs: 1

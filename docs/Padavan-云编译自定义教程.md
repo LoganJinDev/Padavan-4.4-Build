@@ -152,11 +152,14 @@ SQM 面板字段：
 
 配置生成器在 `trunk/user/shadowsocks/ss/`：`genxrayconfig.lua` / `genv2config.lua` / `gentrojanconfig.lua` / `genssconfig.lua`，主调度 `dlink.lua`。
 
-**它做不到什么**：`genxrayconfig.lua` 只生成**一个 outbound ＋ 一个 `freedom`(direct)**，**没有 `routing` 段**。分流是在外层用 chnroute/gfwlist ＋ iptables 做的整体模式切换，所以：
+**分流是两层的，别混**：**外层**由 chnroute/gfwlist ＋ iptables 决定「**哪些流量进 xray**」；**内层**由 xray 的 `routing` 段决定「**进 xray 后走哪个出站**」。`genxrayconfig.lua` 生成**多出站**（`default` / `direct` / `block` / `node_<序号>`，含 `node_5_via_node_3` 形的前置代理链），`routing` 段由 `xrayroute.lua` 生成。所以：
 
 - ✅ 「国内直连、国外走代理」——开箱即用
-- ⚠️ 多节点：节点库存 **dbus `ssconf_basic_json_N`**；`allping.sh`→`ping.sh`→`ssping.lua` **只测延迟/丢包并写回节点库，不会自动切换**；活动节点是**单个** nvram `global_server`（`shadowsocks.sh:36`），只能 WebUI 手选。**没有自动故障切换**
-- ❌ 「域名 A 走节点1、域名 B 走节点2」——**面板不支持**，要自己写 iptables/规则或改代码
+- ✅ 「域名 A 走节点1、域名 B 走节点2」——**面板支持**。UI 在 `Shadowsocks_Route.asp` 的分流规则页与 ACL 页，每条规则绑一个出站（可再指定前置代理）
+- ⚠️ 多节点：节点库存 **dbus `ssconf_basic_json_N`**；`allping.sh`→`ping.sh`→`ssping.lua` **只测延迟/丢包并写回节点库，不会自动切换**；nvram `global_server`（`shadowsocks.sh:36`）是 routing 的**无条件兜底 default**，只能 WebUI 手选。**没有自动故障切换** —— xray 自动选路必须靠 `observatory` / `balancer`，本仓库全树**零命中**
+
+> ⚠️ **勘误（2026-11-16 源码核验）**：本节旧版写「`genxrayconfig.lua` 只生成**一个 outbound ＋ 一个 `freedom`(direct)**，**没有 `routing` 段**」——**已作废**，那描述的是更早的版本。
+> 现版（`genxrayconfig.lua` **432 行** / `xrayroute.lua` **495 行**）文件头即自陈「多出站 + 前置代理 + routing 段」，`:393` 调 `xrayroute.build_routing(resolve)`，`:429-430` 最终 JSON 同时含 `outbounds` 与 `routing`。★ 与旧结论相反，故上面三条一并更正。
 
 > ⚠️ **勘误（2026-10-14 实测）**：早期版本本教程写「多节点用 `ssp_*` 字段做测速选优/故障切换」——**错误**。
 > `ssp_*` 是**死 nvram 变量**：全仓库没有任何 `.sh`/`.lua` 读取（只在 `shared/src/defaults.c`、`httpd/src/variables.c` 注册，`Shadowsocks.asp` 表单里显示）。真正的节点库是 dbus `ssconf_basic_json_N`。
@@ -176,12 +179,13 @@ SQM 面板字段：
 
 **喂给进程**：`shadowsocks.sh:273-276` → `run_bin /usr/bin/xray -config /tmp/v2-redir.json`
 
-**四道硬闸**（决定了「不能按规则选节点」）：
+**三道结构约束**（都跟「选哪个节点」无关，但决定了自定义配置的天花板）：
 
-1. **单节点**：`shadowsocks.sh:36` `GLOBAL_SERVER=\`nvram get global_server\`` → 只生成一份出站配置
-2. **单出口端口**：`ss-rules:180-184` 全部 `-j REDIRECT --to-ports 1080`
-3. **分流只管「走不走代理」**：`ss-rules` 的 `ipset_r()`（:87-157）按 gfw/router/oversea/all 建 ipset 链，与选哪个节点无关
-4. **无自定义配置入口**：`gen_config_file()` **每次无条件覆盖** `/tmp/*.json`，没有「存在即跳过」、没有 nvram 开关、没有目录优先级
+1. **兜底单节点**：`shadowsocks.sh:36` `GLOBAL_SERVER=\`nvram get global_server\`` —— 它是 routing 的**无条件兜底 default**，**不**代表「只能有一个出站」（多出站由分流规则按需追加，见上）
+2. **单出口端口**：`ss-rules:180-184` 全部 `-j REDIRECT --to-ports 1080` —— 这是**外层**：进 xray 的流量统一从 1080 交给它，再由 xray 内部 routing 分派
+3. **无自定义配置入口**：`gen_config_file()` **每次无条件覆盖** `/tmp/*.json`，没有「存在即跳过」、没有 nvram 开关、没有目录优先级
+
+> 原第 3 条「分流只管『走不走代理』」已并入第 2 条 —— `ss-rules` 的 `ipset_r()`（:87-157）按 gfw/router/oversea/all 建 ipset 链，那正是外层在决定「哪些流量进 xray」。
 
 **免改 C 的用户挂钩**（想做自定义分流只能靠这些）：
 
@@ -195,17 +199,17 @@ SQM 面板字段：
 
 > 注册与落盘：`www/n56u_ribbon_fixed/Advanced_Scripts_Content.asp` 表单 → `httpd/src/web_ex.c:895-907`（`write_textarea_to_file()`，`.sh` 自动 `chmod 0755`），目录 `/etc/storage`。
 
-**做 passwall2 式分流的可行路线**：
+**做 passwall2 式分流：路线 A 已落地，另两条只在需要更细粒度时才考虑**：
 
 | 路线 | 要重编? | 说明 |
 |---|---|---|
-| **C. 多实例 + iptables 分发** | ❌ 不用 | 起多个本地代理端口（如 1081/1082/1083）各连一个节点，用 ipset + iptables 把不同目标打到不同端口。**最省事**，脚本挂 `started_script.sh` |
-| **A. 改 `genxrayconfig.lua`** | ✅ 要 | 生成多 outbound + `routing.rules`。面板仍无 UI，规则写死在 lua 里 |
-| **B. 绕过面板自建** | ✅ 要改脚本 | 手写完整 xray config；**但 `/tmp/*.json` 每次 start 被覆盖**，必须挂钩子脚本在固件启动之后重写回去 |
+| **A. 用面板（✅ 已具备）** | ❌ 不用 | `Shadowsocks_Route.asp` 的分流规则页 + ACL 页直接配「哪个域名/IP 走哪个出站」，底层就是 `genxrayconfig.lua` 的多出站 + `xrayroute.lua` 的 routing 段。**默认走这条** |
+| **C. 多实例 + iptables 分发** | ❌ 不用 | 起多个本地代理端口（如 1081/1082/1083）各连一个节点，用 ipset + iptables 把不同目标打到不同端口。仅在需要**绕开 xray**（例如两个节点协议不同、各要一个内核）时才用，脚本挂 `started_script.sh` |
+| **B. 绕过面板自建** | ✅ 要改脚本 | 手写完整 xray config；**但 `/tmp/*.json` 每次 start 被覆盖**，必须挂钩子脚本在固件启动之后重写回去。仅在面板表达不了目标语义时才用 |
 
-⚠️ **没有任何「保护自定义配置不被覆盖」的机制**——B 路线只能靠钩子事后覆盖。
+⚠️ **没有任何「保护自定义配置不被覆盖」的机制**——B 路线只能靠钩子事后覆盖（这也是优先用 A 的原因之一）。
 
-**sing-box 不要开**：模板里有 `CONFIG_FIRMWARE_INCLUDE_SINGBOX`，但 `trunk/user/www` 和 `trunk/user/shadowsocks` 里**没有任何 sing-box 集成**（无 asp、无 lua 生成器）。加了只有二进制躺着，**面板配不了**，还白吃 7–8MB。
+**sing-box 不要开**：模板里有 `CONFIG_FIRMWARE_INCLUDE_SINGBOX`（开关在 `trunk/configs/templates/*.config`，**当前默认已是 `n`**，连二进制都不进镜像），但 `trunk/user/www` 和 `trunk/user/shadowsocks` 里**没有任何 sing-box 集成**（无 asp、无 lua 生成器）。开了只有二进制躺着，**面板配不了**，还白吃 7–8MB。
 
 ---
 
@@ -378,6 +382,6 @@ ls -l "$TRX"    # 必须 ≤ 32,702,464 B (31.19 MiB)
 | 加 FRP 内网穿透 | `frpc=y`（`frps=n`），+3.9 MB |
 | 控制 LAN 设备网速 | `sqm`+`qos`+`ifb`=y，+0.4 MB；用 CAKE 公平队列或自写 tc 脚本 |
 | 国内直连/国外代理 | **已具备**，`ss_run_mode=router` 即可，不用重编 |
-| 按规则选不同节点（passwall2 式） | **面板不支持**。最省事走「多端口 + iptables 分发」（不重编，挂 `started_script.sh`）；彻底方案要改 `genxrayconfig.lua` 重编 |
+| 按规则选不同节点 | **已具备**，不用重编 —— `Shadowsocks_Route.asp` 的分流规则页 / ACL 页，每条规则绑一个出站 |
 | 改国家码 / 访客网络 / 时区 / NTP / 掩码 | 手改 `defaults.h` |
 | 改功能矩阵 | `plugins` JSON 或 `templates/GHL.config` |
