@@ -17,7 +17,7 @@ extract_test:
 
 clean:
 	( if [ -d $(SRC_NAME) ]; then \
-		$(MAKE) -C $(SRC_NAME) clean
+		$(MAKE) -C $(SRC_NAME) clean; \
 	fi )
 
 romfs:
