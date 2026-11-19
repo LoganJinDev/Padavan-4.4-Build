@@ -414,7 +414,7 @@ build_tools:
 
 sdk_build_tools:
 	if [ -f $(RT28xx_DIR)/eeprom_log ]; then \
-		rm -f $(RT28xx_DIR)/eeprom_log
+		rm -f $(RT28xx_DIR)/eeprom_log; \
 	fi
 	echo $(EE_TYPE) >> eeprom_log
 	echo $(CHIPSET) >> eeprom_log
